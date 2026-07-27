@@ -1,0 +1,88 @@
+# SearchAgent Yandex Optimized Configuration
+# Calibrated for high-engagement, high-click Personalized Web Search Logs (avg ~3.6 clicks/session)
+
+llm:
+  model_name: "deepseek-v4-flash"  # API-only; no local model
+  temperature: 0.7
+  max_new_tokens: 256
+  top_p: 0.9
+
+persona:
+  age_range: [18, 65]
+  search_expertise:
+    - "novice"
+    - "intermediate"
+    - "expert"
+  ad_sensitivity:
+    - "ad_tolerant"
+    - "ad_neutral"
+    - "ad_averse"
+  decision_style:
+    - "impulsive"
+    - "deliberate"
+    - "price_sensitive"
+  patience_level:
+    - "low"
+    - "medium"
+    - "high"
+
+environment:
+  max_results_per_page: 10
+  max_ads_per_page: 3
+  ad_positions: [0, 3, 7]
+  # Position bias parameters (calibrated to Yandex's specific click ranking distribution)
+  position_bias:
+    click_prob_by_rank: [0.35, 0.20, 0.14, 0.10, 0.08, 0.06, 0.04, 0.03, 0.02, 0.015]
+
+simulation:
+  max_session_steps: 20
+  max_queries_per_session: 5    # real reform 0.466 (from full pool, not the 1.0 myth)
+  session_timeout_prob: 0.01   # near-zero: 0% abandon in Yandex, keep sessions alive
+  num_sessions: 100
+  seed: 42
+  log_dir: "./logs"
+  output_dir: "./output"
+
+intent:
+  states:
+    - "exploratory"
+    - "focused"
+    - "transactional"
+  initial_distribution: [0.6, 0.3, 0.1]
+  transitions:
+    click_organic: [0.2, 0.5, 0.3]
+    click_ad: [0.1, 0.2, 0.7]
+    skip: [0.5, 0.3, 0.2]
+    next_page: [0.4, 0.4, 0.2]
+    reformulate: [0.5, 0.4, 0.1]
+    new_query: [0.7, 0.2, 0.1]
+    abandon: [0.0, 0.0, 0.0]
+    end_session: [0.0, 0.0, 0.0]
+
+evaluation:
+  metrics:
+    - "click_position_jsd"
+    - "clicks_per_session_gap"
+  cfs_weights:
+    click_position_jsd: 0.30
+    clicks_per_session_gap: 0.70
+
+device: "auto"
+
+calibration:
+  # Yandex: medium-click (2.64/session), 0% abandon, 100% reformulation.
+  # The extreme reform rate (all sessions multi-query) is the key behavioral feature.
+  # Strong lambda_click for position-bias alignment (Yandex-specific click curve).
+  # Weak KL: Yandex queries are diverse; let the calibrator adapt freely.
+  calibrator_path: "output/calib/calibrator.pt"
+  hidden: 80
+  exam_dim: 7
+  attr_dim: 7
+  lambda_click: 2.5    # high: Yandex has distinct position-click distribution
+  lambda_kl: 0.06      # low: diverse query types, LLM prior less reliable
+  lambda_cal: 0.08     # higher: 0% abandon is unusual, trust gate needs tuning
+  lr: 0.003
+  epochs: 400
+  click_temperature: 2.0    # revert: T=1.6 crashed clicks (1.37 vs real 2.94); v10 T=2.0 was best
+  target_clicks: 2.94    # soft cap = real clicks/session
+  click_boost: 1.8    # yandex under-clicks (0.7 vs real 1.03/query)
